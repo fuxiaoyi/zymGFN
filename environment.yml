@@ -1,0 +1,32 @@
+name: zymgfn
+channels:
+  - conda-forge
+  - pytorch
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.9
+  - numpy
+  - pandas
+  - matplotlib
+  - seaborn
+  - scikit-learn
+  - pytorch
+  - torchvision
+  - torchaudio
+  - transformers
+  - biopython
+  - biotite
+  - openmm
+  - mdtraj
+  - jupyter
+  - ipykernel
+  - pip
+  - hydra-core
+  - omegaconf
+  - pip:
+    - esmfold
+    - fair-esm
+    - accelerate
+    - wandb
+    - tensorboard

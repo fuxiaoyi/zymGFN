@@ -1,0 +1,38 @@
+# @package training
+# GRPO (Group Relative Policy Optimization) training configuration
+
+# Training parameters
+learning_rate: 1e-5
+batch_size: 4
+gradient_accumulation_steps: 4
+max_epochs: 10
+warmup_steps: 100
+weight_decay: 0.01
+
+# GRPO specific parameters
+grpo:
+  beta: 0.1  # KL penalty coefficient
+  gamma: 0.99  # Discount factor
+  lam: 0.95  # GAE lambda
+  clip_ratio: 0.2  # PPO clip ratio
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+
+# Optimization
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: ${training.learning_rate}
+  weight_decay: ${training.weight_decay}
+
+# Scheduler
+scheduler:
+  _target_: transformers.get_linear_schedule_with_warmup
+  num_warmup_steps: ${training.warmup_steps}
+  num_training_steps: 1000  # Will be updated dynamically
+
+# Checkpointing
+checkpoint:
+  save_every_n_epochs: 1
+  save_top_k: 3
+  monitor: "val_loss"
+  mode: "min"

@@ -1,0 +1,32 @@
+# @package _global_
+defaults:
+  - _self_
+  - model: esm2
+  - training: grpo
+  - data: enzyme_dataset
+  - hardware: gpu
+
+# Project configuration
+project_name: "zymGFN"
+version: "1.0.0"
+description: "Protein Language Model for Enzyme Design using Reinforcement Learning"
+
+# Paths
+paths:
+  data_dir: "data"
+  model_dir: "model"
+  output_dir: "outputs"
+  log_dir: "logs"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "${paths.log_dir}/training.log"
+
+# Experiment tracking
+experiment:
+  use_wandb: true
+  project: "zymGFN"
+  entity: null  # Set your wandb entity here
+  tags: ["protein", "enzyme", "reinforcement_learning"]

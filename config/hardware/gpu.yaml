@@ -1,0 +1,19 @@
+# @package hardware
+# GPU configuration
+
+device: "cuda"
+gpu_ids: [0]
+mixed_precision: true
+gradient_checkpointing: true
+
+# Memory optimization
+memory:
+  max_memory_usage: 0.9  # Use 90% of available GPU memory
+  empty_cache_frequency: 100  # Clear cache every 100 steps
+
+# Distributed training (if needed)
+distributed:
+  enabled: false
+  backend: "nccl"
+  world_size: 1
+  rank: 0

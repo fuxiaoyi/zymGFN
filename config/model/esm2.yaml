@@ -1,0 +1,15 @@
+# @package model
+_target_: transformers.AutoModelForCausalLM
+
+# Model configuration
+model_name: "facebook/esm2_t33_650M_UR50D"
+pretrained: true
+freeze_embeddings: false
+
+# Model parameters
+max_length: 1024
+vocab_size: 33  # ESM2 vocabulary size
+hidden_size: 1280
+num_attention_heads: 20
+num_hidden_layers: 33
+intermediate_size: 5120

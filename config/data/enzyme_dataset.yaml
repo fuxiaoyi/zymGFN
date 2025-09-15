@@ -1,0 +1,35 @@
+# @package data
+# Enzyme dataset configuration
+
+# Dataset parameters
+dataset_name: "enzyme_dataset"
+data_dir: "${paths.data_dir}"
+max_length: 1024
+min_length: 50
+
+# Enzyme specific parameters
+enzyme_class: "3.1.1.1"  # Default enzyme class
+target_pdb: "2vvb.pdb"  # Reference PDB structure
+reference_pdb: "1i6p.pdb"  # Alternative reference
+
+# Data processing
+preprocessing:
+  remove_duplicates: true
+  filter_by_length: true
+  min_seq_length: 50
+  max_seq_length: 1024
+  cluster_threshold: 0.9
+
+# Data splits
+splits:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  random_seed: 42
+
+# Data loading
+dataloader:
+  batch_size: 4
+  num_workers: 4
+  shuffle: true
+  pin_memory: true

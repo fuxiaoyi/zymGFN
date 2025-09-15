@@ -1,0 +1,15 @@
+# @package hardware
+# CPU configuration
+
+device: "cpu"
+num_workers: 4
+mixed_precision: false
+gradient_checkpointing: false
+
+# Memory optimization
+memory:
+  max_memory_usage: 0.8  # Use 80% of available CPU memory
+
+# Distributed training (if needed)
+distributed:
+  enabled: false
