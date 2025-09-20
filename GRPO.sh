@@ -18,9 +18,7 @@ set -euo pipefail
 ###################
 # set environment #
 ###################
-# 初始化 conda（按你本机 Anaconda/Miniconda 路径修改）
 eval "$(conda shell.bash hook)"
-
 
 ###############
 # run command #
@@ -29,92 +27,92 @@ folder_path="/home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGfl
 label="3.1.1.1"
 smiles='CC(=O)Oc1ccc(cc1)[N+](=O)[O-]'
 
-
 echo "self-training of ZymCTRL for TMscore with ${label} started"
-conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
-module unload compilers/cuda cudnn compilers/gcc
-source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
 
-for i in $(seq 1 30); do
+# ===== 从 0 开始；第 0 轮不训练，只产出 logs.csv 供第 1 轮训练 =====
+for i in $(seq 0 30); do
   echo "========== Iteration ${i} =========="
+  run_dir="${folder_path}output_iteration${i}"
+  export RUN_DIR="${run_dir}"   # ← 每轮更新并导出
+  LABEL="${label}"
+  export LABEL                       # 让 YAML 能读到
+  export ITER="${i}"                 # 每轮更新迭代号
+  prev=$((i-1))
+  prev_dir="${folder_path}output_iteration${prev}"
+  export PREV_DIR="${prev_dir}"
 
-  # -------- 训练（从第 1 轮开始，用上一轮 i-1 的 CSV） --------
-  if [ "${i}" -ne 0 ]; then
-    prev=$((i-1))
-    echo "[Iter ${i}] Train started (use tox/kcat from iter ${prev})"
+  # -------- 训练（仅 i>0 时运行；读取上一轮 prev_dir/logs.csv）--------
+  if [ "${i}" -gt 0 ]; then
+    conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
+    module unload compilers/cuda cudnn compilers/gcc
+    source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
 
     python "${folder_path}GRPO_train.py" \
-      --iteration_num "${i}" \
-      --label "${label}" \
-      --model_dir "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local" \
-      --max_iteration_num 30
+      --config-path "${folder_path}conf" --config-name "grpo_train" \
+      iteration_num="${i}" label="${label}" \
+      hydra.run.dir="${run_dir}"
 
     conda deactivate
   else
-    # 第 0 轮：创建目录
-    echo "[Iter 0] Init folders"
-    mkdir -p "${folder_path}generated_sequences" \
-             "${folder_path}PDB" \
-             "${folder_path}TMscores" \
-             "${folder_path}models" \
-             "${folder_path}dataset"
+    echo "[Iter 0] cold-start: skip training; generating data for next iter"
   fi
 
-  # -------- 生成序列 --------
+  # -------- 生成序列（FASTA 写到 run_dir）--------
   echo "[Iter ${i}] Sequence generation"
   module unload compilers/cuda cudnn compilers/gcc
-#   compilers/cuda/11.8   4) cudnn/8.8.1.3_cuda11.x   5) nccl/2.11.4-1_cuda11.8
   module load compilers/gcc/11.3.0 compilers/cuda/11.8 cudnn/8.8.1.3_cuda11.x
   conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_cp310
-  cd "${folder_path}"
 
-  if [ "${i}" -ne 0 ]; then
-    python "${folder_path}seq_gen.py" \
-      --iteration_num "${i}" \
-      --label "${label}" \
-      --cwd "${folder_path}"
-  
-    # -------- 折叠结构（ESMFold）--------
-    echo "[Iter ${i}] Folding (ESMFold)"
-    python "${folder_path}ESM_Fold.py" \
-      --iteration_num "${i}" \
-      --label "${label}" 
-  fi
+  python "${folder_path}seq_gen.py" \
+    --config-path "${folder_path}conf" --config-name "grpo_seq_gen" \
+    iteration_num="${i}" label="${label}" \
+    hydra.run.dir="${run_dir}"
 
-  # -------- 计算 TM 分数（Foldseek）--------
+  # -------- 折叠结构（PDB 写到 run_dir/PDB）--------
+  echo "[Iter ${i}] Folding (ESMFold)"
+  python "${folder_path}ESM_Fold.py" \
+    --config-path "${folder_path}conf" --config-name "grpo_fold" \
+    iteration_num="${i}" label="${label}" \
+    hydra.run.dir="${run_dir}"
+
+  # -------- Foldseek TM-score（输出 TM 文件到 run_dir）--------
   echo "[Iter ${i}] Foldseek TM-score vs 7atl (alpha)"
-  tmp_dir="${folder_path}tmp_${i}"
+  tmp_dir="${run_dir}/tmp"
   mkdir -p "${tmp_dir}"
+
   foldseek easy-search \
-    "${folder_path}output_iteration$i/PDB" \
+    "${run_dir}/PDB" \
     "${folder_path}7atl.pdb" \
-    "alpha_${label}_TM_iteration${i}" \
+    "${run_dir}/alpha_${label}_TM_iteration${i}" \
     "${tmp_dir}" \
     --format-output "query,target,alntmscore,qtmscore,ttmscore,alnlen" \
     --exhaustive-search 1 -e inf --tmscore-threshold 0.0
+
+  # -------- 聚类（输入 FASTA 从 run_dir，输出到 run_dir/clustering）--------
+  echo "[Iter ${i}] Alignments and cluster"
+  tmp_dir="${run_dir}/tmp"
+  mkdir -p "${tmp_dir}" "${run_dir}/clustering"
+
+  mmseqs easy-cluster \
+    "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
+    "${run_dir}/clustering/clustResult_0.9_seq_gen_${label}_iteration${i}" \
+    "${tmp_dir}" --min-seq-id 0.9
+
   rm -rf "${tmp_dir}"
 
-  echo Aligments and cluster 
-  mkdir -p "${folder_path}clustering"
-  tmp_dir="${folder_path}tmp_${i}"
-  mkdir -p "${tmp_dir}"
-  mmseqs easy-cluster "${folder_path}seq_gen_${label}_iteration${i}.fasta" "${folder_path}clustering/clustResult_0.9_seq_gen_${label}_iteration${i}" "${tmp_dir}" --min-seq-id 0.9
-  rm -rf "${tmp_dir}"
-
-  conda deactivate
-
-  # -------- 毒性预测（ToxinPred2）--------
+  # -------- 毒性预测（ToxinPred2，输出到 run_dir）--------
   echo "[Iter ${i}] ToxinPred2"
   conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/matrics_yxu
   cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/toxinpred/toxinpred2
 
   python toxinpred2.py \
-    -i "${folder_path}seq_gen_${label}_iteration${i}.fasta" \
-    -o "${folder_path}outfile${i}.csv" \
+    -i "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
+    -o "${run_dir}/outfile${i}.csv" \
     -d 2
+
   conda deactivate
 
-  # -------- UniKP（kcat）--------
+  # -------- UniKP（kcat，输出到 run_dir）--------
   echo "[Iter ${i}] UniKP kcat"
   conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2
   cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/UniKP
@@ -129,24 +127,28 @@ PY
   PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
   /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python \
     /home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/UniKP/UniKP_fasta_train.py \
-    --fasta "${folder_path}seq_gen_${label}_iteration${i}.fasta" \
+    --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
     --smiles "${smiles}" \
     --task kcat \
-    --out "${folder_path}results_kcat${i}.csv" \
+    --out "${run_dir}/results_kcat${i}.csv" \
     --write_linear
 
   conda deactivate
-  
+
+  # -------- 合并生成当轮 logs.csv（写到 run_dir）--------
+  echo "[Iter ${i}] dataset generation"
   conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
   module unload compilers/cuda cudnn compilers/gcc
   source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
-  cd "${folder_path}"
 
-  echo dataset generation 
-  cd ${folder_path}
-  python ${folder_path}dataset_gen_toxUnikp.py --iteration_num $i --label $label --model_dir "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local" --tox_csv "${folder_path}outfile${i}.csv" --kcat_csv "${folder_path}results_kcat${i}.csv"
+  python "${folder_path}dataset_gen_toxUnikp.py" \
+    --config-path "${folder_path}conf" --config-name "grpo_dataset" \
+    paths.toxicity="${run_dir}/outfile${i}.csv" \
+    paths.kcat="${run_dir}/results_kcat${i}.csv" \
+    hydra.run.dir="${run_dir}"
 
-  
+  conda deactivate
+
 done
 
 ###############

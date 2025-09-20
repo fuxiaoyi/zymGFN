@@ -1,105 +1,234 @@
-from src.utils import *
-from src.pLM_weigtedDPO import weighted_DPO
-from src.pLM_GRPO import pLM_GRPOTrainer
+# train_hydra.py —— 结构化配置（Hydra + dataclass）版本
+from __future__ import annotations
 
-from datasets import load_dataset, Dataset
-from trl import GRPOConfig, GRPOTrainer
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    PreTrainedModel)
-from trl.trainer.utils import pad
-from torch import nn
-from torch.optim.lr_scheduler import LambdaLR
-from torch.optim import AdamW
-from accelerate.utils import broadcast_object_list, gather, gather_object, is_peft_model, set_seed
-import argparse
-import torch
-import numpy as np
-import random
-import pandas as pd
-import math
-import os
+from trainer.utils import *
+from trainer.pLM_weightedDPO import weighted_DPO
+from trainer.pLM_GRPO import pLM_GRPOTrainer
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--iteration_num", type=int, required=True)
-parser.add_argument("--label", type=str, required=True)
-parser.add_argument("--model_dir", type=str, required=True)
-parser.add_argument("--max_iteration_num", type=int, required=True)
-args = parser.parse_args()
+import hydra
+from omegaconf import DictConfig, OmegaConf, MISSING
+from hydra.utils import to_absolute_path
+from hydra.core.config_store import ConfigStore
 
-CONFIG = {
-    "beta": 0.1,           # GRPO的beta
-    "seed": 42,
-    "learning_rate": 2e-6,
-    "batch_size": 8,
-    "num_epochs": 1,
-    "split_percent": 0.2,
-    "adam_betas": (0.9, 0.98),
-    "epsilon": 1e-8,
-    "adam_decay": 0.1,
+from dataclasses import dataclass
+from datasets import Dataset
+from trl import GRPOConfig
+from transformers import AutoTokenizer
+from accelerate.utils import set_seed
 
-    # --- 新增：reward 相关开关/系数 ---
-    "len_center": 260.0,
-    "len_sigma": 0.5,
-    "use_tox_penalty": True,
-    "tox_alpha": 1.0,       # weight *= (1-ml_score)**alpha
-    "use_kcat_factor": True,
-    "kcat_beta": 2.0,       # weight *= (kcat_norm)**beta
-    # 如果 logs.csv 已经提供 kcat_norm(0~1)，优先使用；否则用原始 kcat 做本批次 min-max 归一化
-}
+import torch, numpy as np, random, pandas as pd, math, os
+from pathlib import Path
+from typing import Optional, Tuple, Dict, List
+from dataclasses import dataclass, field
 
-def seed_everything(seed):
+
+# =======================
+# 1) 结构化配置（Schema）
+# =======================
+@dataclass
+class HPConfig:
+    beta: float = 0.1
+    seed: int = 42
+    learning_rate: float = 2e-6
+    batch_size: int = 8
+    num_epochs: int = 1
+    split_percent: float = 0.2
+    adam_betas: Tuple[float, float] = (0.9, 0.98)
+    epsilon: float = 1e-8
+    adam_decay: float = 0.1
+    len_center: float = 260.0
+    len_sigma: float = 0.5
+    use_tox_penalty: bool = True
+    tox_alpha: float = 1.0
+    tox_factor: float = 0.1
+    use_kcat_factor: bool = True
+    kcat_beta: float = 2.0
+
+
+@dataclass
+class PathsConfig:
+    tox_csv: Optional[str] = None
+    kcat_csv: Optional[str] = None
+
+
+@dataclass
+class TrainConfig:
+    iteration_num: int = MISSING
+    label: str = MISSING
+    model_dir: str = MISSING
+    max_iteration_num: int = 30
+    hp: HPConfig = field(default_factory=HPConfig)        # ✅ 用工厂创建新实例
+    paths: PathsConfig = field(default_factory=PathsConfig)
+
+
+# 将 schema 注册给 Hydra（无需外部 YAML 也能工作）
+cs = ConfigStore.instance()
+cs.store(name="train_schema", node=TrainConfig)
+
+
+# =======================
+# 2) 常用工具函数
+# =======================
+def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
     random.seed(seed)
     torch.backends.cudnn.deterministic = True
-    random.seed(seed)
     set_seed(seed)
 
+
 def _length_reward(seq_len: int, center: float = 260.0, sigma: float = 0.5) -> float:
-    """长度奖励（高斯），以 center 为峰值。"""
     x = (seq_len / center) - 1.0
     return math.exp(-((x * x) / (sigma * sigma)))
+
 
 def _minmax_norm(v, vmin, vmax):
     if vmax <= vmin:
         return 1.0
     return max(0.0, min(1.0, (v - vmin) / (vmax - vmin)))
 
+
 def reward_len(completions, **kwargs):
-    # 你原来的占位函数，保持不变（GRPO内部会用到）
+    # 你的占位 reward（与原代码一致）
     return 0
+
 
 def format_sequence(sequence, label):
     return f"<sep><start>{sequence}<end><|endoftext|>"
 
-def generate_dataset(iteration_num, label, tox_quantile=0.70, use_negrew=False):
-    """
-    从 logs.csv 读取上一轮 (iteration_num - 1) 的数据，计算综合 weight。
-    若某行缺失 ml_score 或 kcat，则直接丢弃。
-    """
-    df = pd.read_csv("logs.csv")
+
+def _clean_name(s: str) -> str:
+    return str(s).strip().split("\t")[0].lstrip(">").strip().strip('"')
+
+
+def _read_csv_auto(path: str) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, sep=None, engine="python")
+    except Exception:
+        return pd.read_csv(path, sep="\t")
+
+
+def read_fasta_as_dict(fasta_path: str) -> Dict[str, str]:
+    p = Path(fasta_path)
+    if not p.exists():
+        raise FileNotFoundError(f"FASTA not found: {p}")
+    seqs: Dict[str, str] = {}
+    cur: Optional[str] = None
+    for line in p.read_text().splitlines():
+        if not line:
+            continue
+        if line.startswith(">"):
+            cur = _clean_name(line)
+        else:
+            if cur is not None:
+                seqs[cur] = line.strip()
+    return seqs
+
+
+def read_tm_file(tm_path: str) -> List[Tuple[str, float, float, int]]:
+    p = Path(tm_path)
+    if not p.exists():
+        raise FileNotFoundError(f"TM file not found: {p}")
+    rows: List[Tuple[str, float, float, int]] = []
+    lines = p.read_text().splitlines()
+    if lines and lines[0].lower().startswith("query"):
+        lines = lines[1:]
+    for entry in lines:
+        parts = entry.split("\t")
+        if len(parts) < 6:
+            continue
+        name = _clean_name(parts[0])
+        try:
+            TM = float(parts[2])
+            TM_norm_que = float(parts[4])   # ttmscore
+            algn = int(parts[5])
+        except Exception:
+            continue
+        rows.append((name, TM, TM_norm_que, algn))
+    return rows
+
+
+def load_tox_map(tox_csv: Optional[str]) -> Dict[str, float]:
+    m: Dict[str, float] = {}
+    if not tox_csv:
+        return m
+    p = Path(tox_csv)
+    if not p.exists():
+        return m
+    df = _read_csv_auto(str(p))
+    cols = {c.lower(): c for c in df.columns}
+    idc = cols.get("id") or cols.get("name") or list(df.columns)[0]
+    sc = cols.get("ml_score") or cols.get("score")
+    if sc is None:
+        return m
+    for _, r in df.iterrows():
+        name = _clean_name(r[idc])
+        try:
+            m[name] = float(r[sc])
+        except Exception:
+            m[name] = 0.0
+    return m
+
+
+def load_kcat_map(kcat_csv: Optional[str], col_use: str = "pred_linear") -> Dict[str, float]:
+    m: Dict[str, float] = {}
+    if not kcat_csv:
+        return m
+    p = Path(kcat_csv)
+    if not p.exists():
+        return m
+    df = _read_csv_auto(str(p))
+    cols = {c.lower(): c for c in df.columns}
+    idc = cols.get("id") or cols.get("name") or list(df.columns)[0]
+    kc = cols.get(col_use.lower()) or cols.get("pred_linear") or cols.get("pred_log10")
+    if kc is None:
+        return m
+    for _, r in df.iterrows():
+        v = r[kc]
+        if pd.notna(v):
+            try:
+                m[_clean_name(r[idc])] = float(v)
+            except Exception:
+                pass
+    return m
+
+
+# =======================
+# 3) 从上一轮构造训练集
+# =======================
+def build_dataset_from_prev_run(
+    *,
+    prev_run_dir: Path,
+    iteration_num: int,
+    label: str,
+    hp: HPConfig,
+    tox_csv: Optional[str],
+    kcat_csv: Optional[str],
+    tox_quantile: float = 0.70,
+    use_negrew: bool = False,
+) -> Dataset:
+    logs_path = prev_run_dir / "logs.csv"
+    if not logs_path.exists():
+        raise FileNotFoundError(f"[build_dataset] logs.csv not found: {logs_path}")
+
+    df = pd.read_csv(str(logs_path))
     df = df[df["iteration_num"] == (iteration_num - 1)]
 
-    # 必须列
     need_cols = ["TM_norm_que", "sequence", "algn"]
     for c in need_cols:
         if c not in df.columns:
             raise ValueError(f"[ERROR] logs.csv missing required column: {c}")
 
-    # 转换数值
     df["TM_norm_que"] = pd.to_numeric(df["TM_norm_que"], errors="coerce")
     df["algn"] = pd.to_numeric(df["algn"], errors="coerce")
 
-    # 毒性 & kcat
-    has_tox = CONFIG["use_tox_penalty"] and ("ml_score" in df.columns)
-    has_kcat_norm = CONFIG["use_kcat_factor"] and ("kcat_norm" in df.columns)
-    has_kcat_raw = CONFIG["use_kcat_factor"] and (("kcat" in df.columns) or ("kcat_raw" in df.columns))
+    has_tox = hp.use_tox_penalty and ("ml_score" in df.columns)
+    has_kcat_norm = hp.use_kcat_factor and ("kcat_norm" in df.columns)
+    has_kcat_raw = hp.use_kcat_factor and (("kcat" in df.columns) or ("kcat_raw" in df.columns))
 
     # kcat 归一化
-    if CONFIG["use_kcat_factor"] and not has_kcat_norm and has_kcat_raw:
+    if hp.use_kcat_factor and not has_kcat_norm and has_kcat_raw:
         kcol = "kcat" if "kcat" in df.columns else "kcat_raw"
         df[kcol] = pd.to_numeric(df[kcol], errors="coerce")
         valid = df[kcol].dropna()
@@ -107,157 +236,204 @@ def generate_dataset(iteration_num, label, tox_quantile=0.70, use_negrew=False):
             kmin, kmax = valid.min(), valid.max()
             df["kcat_norm"] = df[kcol].apply(lambda v: _minmax_norm(v, kmin, kmax) if pd.notna(v) else np.nan)
             has_kcat_norm = True
-            
-    tox_thr = df["ml_score"].quantile(tox_quantile)
+    tox_thr = df["ml_score"].quantile(tox_quantile) if has_tox else 1.0
 
     rows = []
-    for _, entry in df.iterrows():
-        sequence = str(entry.get("sequence", ""))
-        TM_norm_que = entry.get("TM_norm_que")
-        algn = entry.get("algn")
-
-        if not sequence or pd.isna(TM_norm_que) or pd.isna(algn):
+    for _, r in df.iterrows():
+        seq = str(r.get("sequence", ""))
+        TMn = r.get("TM_norm_que")
+        alg = r.get("algn")
+        if not seq or pd.isna(TMn) or pd.isna(alg):
             continue
 
-        # 毒性：如果需要但缺失 -> 丢弃
+        # 毒性
         if has_tox:
-            ml_score = entry.get("ml_score", np.nan)
-            if pd.isna(ml_score):
+            ml = r.get("ml_score", np.nan)
+            if pd.isna(ml):
                 continue
-            ml_score = max(0.0, min(1.0, float(ml_score)))
-            tox_factor = (1.0 - ml_score) ** float(CONFIG["tox_alpha"])
-            if ml_score>=tox_thr:
-                tox_factor = 0
-            else:
-                tox_factor = 1.0
+            ml = max(0.0, min(1.0, float(ml)))
+            tox_factor = hp.tox_factor if ml >= tox_thr else 1.0
         else:
             tox_factor = 1.0
 
-        # kcat：如果需要但缺失 -> 丢弃
+        # kcat
         kcat_factor = 1.0
-        if CONFIG["use_kcat_factor"]:
-            if has_kcat_norm:
-                kcat_norm = entry.get("kcat_norm", np.nan)
-                if pd.isna(kcat_norm):
-                    continue
-                kcat_norm = max(0.0, min(1.0, float(kcat_norm)))
-                kcat_factor = (kcat_norm ** float(CONFIG["kcat_beta"]))
-            else:
-                # 没有任何 kcat 信息 -> 丢弃
+        if hp.use_kcat_factor:
+            if not has_kcat_norm:
                 continue
+            kn = r.get("kcat_norm", np.nan)
+            if pd.isna(kn):
+                continue
+            kn = max(0.0, min(1.0, float(kn)))
+            kcat_factor = (kn ** float(hp.kcat_beta))
 
-        # 长度奖励
-        length_rew = _length_reward(len(sequence), CONFIG["len_center"], CONFIG["len_sigma"])
-
-        # 基础权重
-        base_weight = (float(TM_norm_que) + (float(algn) / 100.0)) * length_rew
+        length_rew = _length_reward(len(seq), hp.len_center, hp.len_sigma)
+        base_weight = (float(TMn) + (float(alg) / 100.0)) * length_rew
 
         if not use_negrew:
             weight = base_weight * tox_factor * kcat_factor
         else:
             a1, a2 = 3, 0.5
             base = base_weight * kcat_factor
-            if ml_score>=tox_thr:
-                g = max((ml_score-tox_thr)/(1-tox_thr),0)
-                weight = -max(a1*g-a2*base, 0)
+            if has_tox and ml >= tox_thr:
+                g = max((ml - tox_thr) / (1 - tox_thr), 0)
+                weight = -max(a1 * g - a2 * base, 0)
             else:
                 weight = base
 
         rows.append({
             "prompt": label,
-            "completion": format_sequence(sequence, label),
+            "completion": format_sequence(seq, label),
             "reward": float(weight),
             "weight": float(weight),
-            "TM_norm_que": float(TM_norm_que),
-            "algn": float(algn),
+            "TM_norm_que": float(TMn),
+            "algn": float(alg),
             "length_rew": float(length_rew),
             "tox_factor": float(tox_factor),
             "kcat_factor": float(kcat_factor),
         })
 
     if not rows:
-        print("[WARN] No rows kept for dataset; maybe missing ml_score or kcat for all rows?")
+        print("[WARN] No rows kept for dataset; check ml_score/kcat_norm in prev logs.")
     return Dataset.from_list(rows)
 
 
-# ----------------- 训练主流程（与你原来一致） -----------------
-seed_everything(CONFIG["seed"])
+# =======================
+# 4) Hydra 入口
+# =======================
+@hydra.main(version_base=None, config_path=None, config_name="train_schema")
+def main(cfg: TrainConfig):
+    """
+    从 CLI 或 YAML 传入：
+      iteration_num: 0  # 注意：从 0 开始
+      label: "3.1.1.1"
+      model_dir: "/abs/path/to/ZymCTRL_local"
+      max_iteration_num: 30
+      hp: {... 超参 ...}
+      paths:
+        tox_csv: null
+        kcat_csv: null
 
-# create dataset
-root_dir = os.path.dirname(os.path.abspath(__file__))
-seq_dir = os.path.join(root_dir, "data", "inputs")
-fasta_file = os.path.join(seq_dir, f"seq_gen_{args.label}_iteration{args.iteration_num-1}.fasta")
+    ⚠️ 在外层 bash/SLURM 中，请保证同一迭代脚本统一：
+        hydra.run.dir="${folder_path}output_iteration${i}"
+    """
+    # ------------- 基础参数 -------------
+    it = int(cfg.iteration_num)
+    lab = str(cfg.label)
+    mdl = to_absolute_path(str(cfg.model_dir))
+    max_it = int(cfg.max_iteration_num)
+    HP = cfg.hp
 
-dataset = generate_dataset(args.iteration_num, args.label)
-split = dataset.train_test_split(test_size=CONFIG["split_percent"], seed=CONFIG["seed"], shuffle=True)
-train_dataset = split['train']
-eval_dataset  = split['test']
+    # ------------- 目录关系 -------------
+    # run_dir = Path.cwd()  # 本轮输出目录（hydra.run.dir）
+    run_dir = Path(cfg.run_dir)
+    prev_run_dir = Path(cfg.prev_dir)
+    # prev_run_dir = run_dir.with_name(f"output_iteration{it-1}") if it > 0 else None
 
-tokenizer_dir = args.model_dir
-tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir,
-                                          add_eos_token=False,  # 训练时不要自动加eos
-                                          add_bos_token=False,
-                                          use_fast=True)
-tokenizer.eos_token_id = 1
-tokenizer.pad_token_id = 0
+    print(f"[Hydra] run_dir = {run_dir}")
+    print(f"[Hydra] prev_run_dir = {prev_run_dir}")
 
-if args.iteration_num > 1:
-    model = f"output_iteration{args.iteration_num-1}"
-    checkpoint = checkpoint_load(f"output_iteration{args.iteration_num-1}")
-else:
-    model = args.model_dir
-    checkpoint = None
+    # ------------- 随机种子 -------------
+    seed_everything(HP.seed)
 
-lr_list = np.linspace(CONFIG["learning_rate"], 0.0, num=args.max_iteration_num)
-optimizer, model, scheduler = load_optimizer_scheduler(model, checkpoint, lr_list[args.iteration_num-1].item(), CONFIG)
+    # ------------- 构造数据集（来自上一轮 logs.csv） -------------
+    if it > 0:
+        dataset = build_dataset_from_prev_run(
+            prev_run_dir=prev_run_dir,
+            iteration_num=it,
+            label=lab,
+            hp=HP,
+            tox_csv=cfg.paths.tox_csv,
+            kcat_csv=cfg.paths.kcat_csv,
+        )
+    else:
+        # 第 0 轮没有上一轮日志；按你的流程，通常 0 轮是初始化/预训练
+        raise RuntimeError("iteration_num==0 时请先准备初始训练数据或修改逻辑以支持 cold-start。")
 
-training_args = GRPOConfig(
-    output_dir=f"output_iteration{args.iteration_num}",
-    logging_steps=100,
-    beta=CONFIG["beta"],
-    num_train_epochs=CONFIG["num_epochs"],
-    learning_rate=lr_list[args.iteration_num-1].item(),
-    do_train=True,
-    do_eval=True,
-    eval_strategy="epoch",
-    save_strategy="steps",
-    eval_steps=500,
-    save_total_limit=1,
-    save_steps=5,
-    num_generations=8,
-    bf16=True,
-    gradient_checkpointing=True,
-    torch_compile=False
-)
+    split = dataset.train_test_split(test_size=HP.split_percent, seed=HP.seed, shuffle=True)
+    train_dataset, eval_dataset = split["train"], split["test"]
 
-print("model ", model)
-trainer = pLM_GRPOTrainer(
-    model=model,
-    ref_model=args.model_dir,
-    reward_funcs=reward_len,
-    args=training_args,
-    train_dataset=train_dataset,
-    eval_dataset=eval_dataset,
-    processing_class=tokenizer,
-    optimizers=(optimizer, scheduler)
-)
+    # ------------- tokenizer -------------
+    tokenizer = AutoTokenizer.from_pretrained(
+        mdl, add_eos_token=False, add_bos_token=False, use_fast=True
+    )
+    tokenizer.eos_token_id = 1
+    tokenizer.pad_token_id = 0
 
-trainer.lr_scheduler       = scheduler
-trainer.lr_scheduler_state = None
+    # ------------- 模型/检查点 -------------
+    if it > 1:
+        model_path = str(prev_run_dir)     # 上一轮目录里保存的模型
+        checkpoint = checkpoint_load(str(prev_run_dir))
+    else:
+        model_path = mdl
+        checkpoint = None
 
-from src.utils import _optimizer_to_device
+    # ------------- 学习率 & 优化器 -------------
+    lr_list = np.linspace(HP.learning_rate, 0.0, num=max_it)
+    lr_this = float(lr_list[it-1] if it > 0 else lr_list[0])
+    if hasattr(lr_this, "item"):
+        lr_this = float(lr_this.item())
 
-# 有些环境里 accelerate 的 device 要在这时取
-try:
-    train_device = trainer.accelerator.device
-except Exception:
-    train_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    optimizer, model, scheduler = load_optimizer_scheduler(model_path, checkpoint, lr_this, OmegaConf.to_container(HP, resolve=True))
 
-_optimizer_to_device(optimizer, train_device)
+    # ------------- 训练配置 -------------
+    training_args = GRPOConfig(
+        output_dir=str(run_dir),     # 产物写到本轮 run 目录
+        logging_steps=100,
+        beta=HP.beta,
+        num_train_epochs=HP.num_epochs,
+        learning_rate=lr_this,
+        do_train=True,
+        do_eval=True,
+        eval_strategy="epoch",
+        save_strategy="steps",
+        eval_steps=500,
+        save_total_limit=1,
+        save_steps=5,
+        num_generations=8,
+        bf16=True,
+        gradient_checkpointing=True,
+        torch_compile=False,
+    )
 
-print("fixed LR (optimizer) before training:", trainer.optimizer.param_groups[0]["lr"])
-trainer.train()
-trainer.save_model()
-print("fixed LR (optimizer) after traning:", trainer.optimizer.param_groups[0]["lr"])
+    print("model ", model)
+    trainer = pLM_GRPOTrainer(
+        model=model,
+        ref_model=mdl,
+        reward_funcs=reward_len,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        processing_class=tokenizer,
+        optimizers=(optimizer, scheduler),
+    )
 
-torch.cuda.empty_cache()
+    # ------------- 把优化器移到正确设备 -------------
+    from trainer.utils import _optimizer_to_device
+    try:
+        train_device = trainer.accelerator.device
+    except Exception:
+        train_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    _optimizer_to_device(optimizer, train_device)
+
+    print("fixed LR (optimizer) before training:", trainer.optimizer.param_groups[0]["lr"])
+    trainer.train()
+    trainer.save_model()
+    print("fixed LR (optimizer) after training:", trainer.optimizer.param_groups[0]["lr"])
+    torch.cuda.empty_cache()
+
+
+if __name__ == "__main__":
+    main()
+
+'''
+python train_hydra.py \
+  iteration_num=7 \
+  label=3.1.1.1 \
+  model_dir=/home/.../ZymCTRL_local \
+  max_iteration_num=30 \
+  hp.learning_rate=3e-6 hp.num_epochs=2 \
+  paths.tox_csv=/abs/path/outfile7.csv \
+  paths.kcat_csv=/abs/path/results_kcat7.csv \
+  hydra.run.dir="/path/to/output_iteration7"
+'''

@@ -1,0 +1,26 @@
+# 供 seq_gen_hydra.py 使用（GenConfig）
+iteration_num: ${oc.env:ITER,0}     # 从环境变量 ITER 取值，默认 0
+label: ${oc.env:LABEL,3.1.1.1}      # 从环境变量 LABEL 取值，默认 3.1.1.1
+run_dir: ${oc.env:RUN_DIR}
+
+
+top_k: 9
+repetition_penalty: 1.2
+max_length: 1014
+num_return_sequences: 20
+num_batches: 10
+special_tokens: ["<start>", "<end>", "<|endoftext|>", "<pad>", " ", "<sep>"]
+allowed_aas: "ACDEFGHIKLMNPQRSTVWY"
+
+model:
+  base_model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+  tokenizer_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+  device: null     # null=自动选 cuda/cpu
+
+paths:
+  out_dir: "${run_dir}"     # 相对 hydra.run.dir
+  fasta_name_tmpl: "seq_gen_{label}_iteration{iteration_num}.fasta"
+
+hydra:
+  job:
+    chdir: false

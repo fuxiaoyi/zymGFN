@@ -1,0 +1,20 @@
+# 供 ESM_Fold_hydra.py 使用
+# === 统一从环境变量拿关键标量 ===
+iter:  ${oc.env:ITER,0}
+label: ${oc.env:LABEL,3.1.1.1}
+run_dir: ${oc.env:RUN_DIR}          # 强烈推荐在 .sh 里每轮都 export 这个
+
+esm:
+  model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold"
+  device: null
+
+paths:
+  # 全部用绝对路径（或由 run_dir 拼出的“准绝对路径”）
+  fasta_path:   "${run_dir}/seq_gen_${label}_iteration${iter}.fasta"
+  sequences_dir: "${run_dir}"
+  pdb_dir:       "${run_dir}/PDB"
+
+# 既然我们都用绝对路径了，是否 chdir 就无所谓了；为了避免混淆，可显式关掉
+hydra:
+  job:
+    chdir: false

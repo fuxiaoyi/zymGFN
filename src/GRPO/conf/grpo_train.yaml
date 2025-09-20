@@ -1,0 +1,30 @@
+# 供 train_hydra.py 使用（TrainConfig）
+iteration_num: ${oc.env:ITER,0}     # 从环境变量 ITER 取值，默认 0
+label: ${oc.env:LABEL,3.1.1.1}      # 从环境变量 LABEL 取值，默认 3.1.1.1
+run_dir: ${oc.env:RUN_DIR}
+prev_dir: ${oc.env:PREV_DIR}
+
+model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+max_iteration_num: 30
+
+hp:
+  beta: 0.1
+  seed: 42
+  learning_rate: 2e-6
+  batch_size: 8
+  num_epochs: 1
+  split_percent: 0.2
+  adam_betas: [0.9, 0.98]
+  epsilon: 1e-8
+  adam_decay: 0.1
+  len_center: 260.0
+  len_sigma: 0.5
+  use_tox_penalty: true
+  tox_alpha: 1.0
+  use_kcat_factor: true
+  kcat_beta: 2.0
+  tox_factor: 0.1
+
+paths:
+  tox_csv: null     # 训练脚本不需要这两个（它读 prev_run/logs.csv），留空即可
+  kcat_csv: null

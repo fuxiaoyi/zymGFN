@@ -1,116 +1,233 @@
-import torch
-from transformers import GPT2LMHeadModel, AutoTokenizer, AutoModelForCausalLM
-import os
-from tqdm import tqdm
+# seq_gen_hydra.py —— 结构化配置（Hydra + dataclass）版本
+from __future__ import annotations
+
 import math
-import argparse
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional, Dict, Tuple
+
+import hydra
+from hydra.core.config_store import ConfigStore
+from hydra.utils import to_absolute_path
+from omegaconf import MISSING
+
+import torch
+from tqdm import tqdm
+from transformers import AutoTokenizer, GPT2LMHeadModel
 
 
+# =======================
+# 1) 结构化配置（Schema）
+# =======================
+@dataclass
+class ModelConfig:
+    # 初始（第 0 轮）使用的底座模型目录（包含权重）
+    base_model_dir: str = MISSING
+    # 分词器目录（通常与 base_model_dir 相同）
+    tokenizer_dir: Optional[str] = None
+    # 设备：None 则自动选择 cuda/cpu
+    device: Optional[str] = None
 
-def remove_characters(sequence, char_list):
-    "This function removes special tokens used during training."
-    columns = sequence.split('<sep>')
-    seq = columns[1]
-    for char in char_list:
-        seq = seq.replace(char, '')
+
+@dataclass
+class PathsConfig:
+    # 输出 FASTA 的目录；相对路径则基于 Hydra 的 run 目录
+    out_dir: str = "."
+    # 输出文件名模板
+    fasta_name_tmpl: str = "seq_gen_{label}_iteration{iteration_num}.fasta"
+
+
+@dataclass
+class GenConfig:
+    # 迭代号与标签（与流水线一致）
+    iteration_num: int = MISSING
+    label: str = MISSING
+
+    # 采样相关参数（可按需暴露更多）
+    top_k: int = 9
+    repetition_penalty: float = 1.2
+    max_length: int = 1014          # 注意：包含 prompt 的总长度
+    num_return_sequences: int = 20  # 每次生成的序列数
+    num_batches: int = 10           # 重复生成的批次数
+
+    # 特殊 token（用于清理）
+    special_tokens: Tuple[str, ...] = ("<start>", "<end>", "<|endoftext|>", "<pad>", " ", "<sep>")
+
+    # 仅允许的氨基酸集合（过滤）
+    allowed_aas: str = "ACDEFGHIKLMNPQRSTVWY"
+
+    model: ModelConfig = ModelConfig(
+        base_model_dir=MISSING,
+        tokenizer_dir=None,
+        device=None,
+    )
+    paths: PathsConfig = PathsConfig()
+
+
+# 将 schema 注册给 Hydra
+cs = ConfigStore.instance()
+cs.store(name="seq_gen_schema", node=GenConfig)
+
+
+# =======================
+# 2) 工具函数
+# =======================
+def _resolve_device(name: Optional[str]) -> torch.device:
+    if name is None:
+        name = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.device(name)
+
+
+def remove_characters(sequence: str, char_list: List[str]) -> str:
+    """
+    移除训练时使用的特殊 token。
+    原逻辑：输入是一段包含 '<sep>' 的文本，取第二段作为序列，再做替换。
+    """
+    columns = sequence.split("<sep>")
+    seq = columns[1] if len(columns) > 1 else sequence
+    for ch in char_list:
+        seq = seq.replace(ch, "")
     return seq
-    
 
-def calculatePerplexity(input_ids,model,tokenizer):
-    "This function computes perplexities for the generated sequences"
-    with torch.no_grad():
-        outputs = model(input_ids.unsqueeze(0), labels=input_ids)
-    loss, logits = outputs[:2]
-    return math.exp(loss)
-    
-        
-def main(label, model,special_tokens,device,tokenizer):
 
-    
-    # Generating sequences
-    input_ids = tokenizer.encode(label,return_tensors='pt').to(device)
-    outputs = model.generate(
-        input_ids, 
-        top_k=9, #tbd
-        repetition_penalty=1.2,
-        max_length=1014,
-        eos_token_id=1,
-        pad_token_id=0,
-        do_sample=True,
-        num_return_sequences=20) # Depending non your GPU, you'll be able to generate fewer or more sequences. This runs in an A40.
-    
-    # Check sequence sanity, ensure sequences are not-truncated.
-    # The model will truncate sequences longer than the specified max_length (1024 above). We want to avoid those sequences.
-    new_outputs = [ output for output in outputs if output[-1] == 0]
-    if not new_outputs:
-        print("not enough sequences with short lengths!!")
+@torch.no_grad()
+def calculate_perplexity(input_ids: torch.Tensor, model: GPT2LMHeadModel) -> float:
+    """
+    计算单条序列的困惑度（PPL）。
+    注意：此处把 input_ids 作为 labels 计算自回归 loss。
+    """
+    outputs = model(input_ids.unsqueeze(0), labels=input_ids)
+    loss = outputs[0] if isinstance(outputs, (list, tuple)) else outputs.loss
+    return math.exp(loss.item())
 
-    # Compute perplexity for every generated sequence in the batch
-    ppls = [(tokenizer.decode(output), calculatePerplexity(output, model, tokenizer)) for output in new_outputs ]
 
-    # Sort the batch by perplexity, the lower the better
-    ppls.sort(key=lambda i:i[1]) # duplicated sequences?
+def _all_chars_allowed(seq: str, allowed: set[str]) -> bool:
+    return all(ch in allowed for ch in seq)
 
-    # Final dictionary with the results
-    sequences={}
-    sequences[label] = [(remove_characters(x[0], special_tokens), x[1]) for x in ppls]
 
-    return sequences
+# =======================
+# 3) 主流程
+# =======================
+@hydra.main(version_base=None, config_path=None, config_name="seq_gen_schema")
+def main(cfg: GenConfig):
+    # run_dir = Path.cwd()
+    run_dir = Path(cfg.run_dir)
 
-if __name__=='__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--iteration_num", type=int)
-    parser.add_argument("--label", type=str)
-    parser.add_argument("--cwd", type=str)
-    args = parser.parse_args()
-    iteration_num = args.iteration_num
-    ec_label = args.label
-    labels = [ec_label.strip()]
+    # 解析路径
+    out_root = Path(cfg.paths.out_dir)
+    if not out_root.is_absolute():
+        out_root = run_dir / out_root
+    out_root.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda") # Replace with 'cpu' if you don't have a GPU - but it will be slow
-    print('Reading pretrained model and tokenizer')
-    
-    
-    if iteration_num == 0:
-      model_name = "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+    fasta_name = cfg.paths.fasta_name_tmpl.format(
+        label=cfg.label, iteration_num=cfg.iteration_num
+    )
+    fasta_path = out_root / fasta_name
+
+    # 设备
+    device = _resolve_device(cfg.model.device)
+
+    # 模型与分词器目录
+    base_model_dir = (
+        cfg.model.base_model_dir
+        if os.path.isabs(cfg.model.base_model_dir)
+        else to_absolute_path(cfg.model.base_model_dir)
+    )
+    tokenizer_dir = (
+        cfg.model.tokenizer_dir or cfg.model.base_model_dir
+    )
+    tokenizer_dir = (
+        tokenizer_dir if os.path.isabs(tokenizer_dir) else to_absolute_path(tokenizer_dir)
+    )
+
+    # 选择权重来源：
+    # - 第 0 轮：用 base_model_dir
+    # - 第 >0 轮：用本轮（已训练完成）的输出目录，即 run_dir
+    if cfg.iteration_num == 0:
+        model_dir_for_gen = base_model_dir
     else:
-      model_name = f'./output_iteration{iteration_num}'
-    
-    print(f'{model_name} loaded')
-    tokenizer = AutoTokenizer.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local") # change to ZymCTRL location
-    model = GPT2LMHeadModel.from_pretrained(model_name).to(device) # change to ZymCTRL location
-    special_tokens = ['<start>', '<end>', '<|endoftext|>','<pad>',' ', '<sep>']
+        # 你的流水线里：训练完成后本轮产物就在 run_dir（例如 output_iteration{i}）
+        model_dir_for_gen = str(run_dir)
 
-    label = ec_label
-    
-    canonical_amino_acids = set("ACDEFGHIKLMNPQRSTVWY")  # Set of canonical amino acids
-    
-    for label in labels:
-        all_sequences = []
-        for i in tqdm(range(10)):
-            sequences = main(label, model, special_tokens, device, tokenizer)
-            for key, value in sequences.items():
-                for index, val in enumerate(value):
-                    if all(char in canonical_amino_acids for char in val[0]):
-                        sequence_info = {
-                            'label': label,
-                            'batch': i,
-                            'index': index,
-                            'pepr': float(val[1]),
-                            'fasta': f">{label}_{i}_{index}_iteration{iteration_num}\t{val[1]}\n{val[0]}\n"
-                        }
-                        all_sequences.append(sequence_info)
-        #all_sequences.sort(key=lambda x: x['pepr'])
-        #top_sequences = all_sequences[:20] #get the top 20
-        fasta_content = ''.join(seq['fasta'] for seq in all_sequences)
-        
-        output_filename = f"seq_gen_{label}_iteration{iteration_num}.fasta"
-        #print(fasta_content)
-        with open(output_filename, "w") as fn:
-            fn.write(fasta_content)
-        
-        fn = open(f"{args.cwd}seq_gen_{label}_iteration{iteration_num}.fasta", "w")
-        fn.write(str(fasta_content))
-        fn.close()
-    
-    
+    print(f"[seq_gen] tokenizer_dir = {tokenizer_dir}")
+    print(f"[seq_gen] model_dir_for_gen = {model_dir_for_gen}")
+    print(f"[seq_gen] fasta_out = {fasta_path}")
+
+    # 加载分词器与模型
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_dir, use_fast=True)
+    model = GPT2LMHeadModel.from_pretrained(model_dir_for_gen).to(device)
+    model.eval()
+
+    # 生成设置
+    eos_id = tokenizer.eos_token_id or 1
+    pad_id = tokenizer.pad_token_id or 0
+    label_prompt = cfg.label.strip()
+    allowed_set = set(cfg.allowed_aas)
+
+    # 逐批生成
+    all_sequences: List[Dict] = []
+    for b in tqdm(range(cfg.num_batches), desc="Generating"):
+        input_ids = tokenizer.encode(label_prompt, return_tensors="pt").to(device)
+        outputs = model.generate(
+            input_ids,
+            top_k=cfg.top_k,
+            repetition_penalty=cfg.repetition_penalty,
+            max_length=cfg.max_length,
+            eos_token_id=eos_id,
+            pad_token_id=pad_id,
+            do_sample=True,
+            num_return_sequences=cfg.num_return_sequences,
+        )
+
+        # 仅保留未被截断（以 pad 结尾）的序列
+        new_outputs = [o for o in outputs if int(o[-1].item()) == pad_id]
+        if not new_outputs:
+            print("[WARN] this batch produced no short (unpadded-end) sequences")
+
+        # 计算 perplexity
+        batch_items: List[Tuple[str, float]] = []
+        for output in new_outputs:
+            decoded = tokenizer.decode(output, skip_special_tokens=False)
+            ppl = calculate_perplexity(output, model)
+            clean_seq = remove_characters(decoded, cfg.special_tokens)
+            if _all_chars_allowed(clean_seq, allowed_set):
+                batch_items.append((clean_seq, float(ppl)))
+
+        # 构造 fasta 片段
+        for idx, (seq, ppl) in enumerate(batch_items):
+            fasta_rec = f">{cfg.label}_{b}_{idx}_iteration{cfg.iteration_num}\t{ppl}\n{seq}\n"
+            all_sequences.append(
+                {
+                    "label": cfg.label,
+                    "batch": b,
+                    "index": idx,
+                    "pepr": ppl,
+                    "fasta": fasta_rec,
+                }
+            )
+
+        # 释放显存
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+
+    # 写出 FASTA
+    fasta_content = "".join(item["fasta"] for item in all_sequences)
+    fasta_path.write_text(fasta_content, encoding="utf-8")
+
+    print(f"[DONE] total_records={len(all_sequences)} -> {fasta_path}")
+
+
+if __name__ == "__main__":
+    main()
+
+'''
+python seq_gen_hydra.py \
+  iteration_num=${i} \
+  label="${label}" \
+  model.base_model_dir="/home/.../ZymCTRL_local" \
+  model.tokenizer_dir="/home/.../ZymCTRL_local" \
+  paths.out_dir="." \
+  hydra.run.dir="${folder_path}output_iteration${i}"
+
+'''

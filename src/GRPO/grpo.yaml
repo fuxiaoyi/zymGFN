@@ -1,0 +1,37 @@
+# GRPO训练配置
+defaults:
+  - model: esm2  # 模型配置
+  - hardware: gpu  # 硬件配置
+  - training: grpo  # 训练配置
+
+# 路径配置
+paths:
+  output_dir: "./outputs"
+  logs_dir: "./logs"
+  sequences_dir: "./sequences"
+  models_dir: "./models"
+  data_dir: "./data"
+  
+  # 具体文件路径
+  output_logs: "${paths.logs_dir}/logs.csv"
+  fasta_template: "${paths.sequences_dir}/seq_gen_{ec_label}_iteration{iteration_num}.fasta"
+  tm_template: "${paths.sequences_dir}/alpha_{ec_label}_TM_iteration{iteration_num}"
+  tox_template: "${paths.data_dir}/toxicity/{ec_label}_tox_iteration{iteration_num}.csv"
+  kcat_template: "${paths.data_dir}/kcat/{ec_label}_kcat_iteration{iteration_num}.csv"
+
+# GRPO特定配置
+grpo:
+  ec_label: "1.1.1.1"  # 默认EC标签
+  iteration_num: 1
+  model_dir: "./models"
+  
+  # 可选文件
+  tox_csv: null
+  kcat_csv: null
+
+# 训练参数
+training:
+  batch_size: 4
+  learning_rate: 1e-5
+  num_epochs: 3
+  max_length: 512

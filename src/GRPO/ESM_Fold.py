@@ -1,64 +1,169 @@
-import torch
-from transformers import AutoTokenizer, EsmForProteinFolding
-import argparse
+# ESM_Fold_hydra.py —— 结构化配置（Hydra + dataclass）版本
+from __future__ import annotations
+
 import os
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+import torch
+import hydra
+from hydra.core.config_store import ConfigStore
+from hydra.utils import to_absolute_path
+from omegaconf import MISSING
+from transformers import AutoTokenizer, EsmForProteinFolding
 
 
-##### Load the module ESM ######
-tokenizer_esm = AutoTokenizer.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold") # Download tokenizer
-model_esm = EsmForProteinFolding.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold")  # Download model
-device_name = "cuda" if torch.cuda.is_available() else "cpu"
-device = torch.device(device_name)
-model_esm = model_esm.to(device)
-
-parser = argparse.ArgumentParser()
-parser.add_argument("--iteration_num", type=int)
-parser.add_argument("--label", type=str)
-args = parser.parse_args()
-iteration_num = args.iteration_num
-ec_label = args.label
-ec_label = ec_label.strip()
-    
-    
-
-model_esm.eval()
+# =======================
+# 1) 结构化配置（Schema）
+# =======================
+@dataclass
+class ESMConfig:
+    # Hugging Face 兼容目录（包含 tokenizer 和 folding 模型）
+    model_dir: str = MISSING
+    # 可选：强制设备，留空则自动选择 cuda/cpu
+    device: Optional[str] = None
 
 
-# Put sequences into dictionary
-with open(f"seq_gen_{ec_label}_iteration{iteration_num}.fasta", "r") as f:
-    data = f.readlines()
+@dataclass
+class PathsConfig:
+    # 如果提供完整 FASTA 路径则优先使用；否则按模板在 sequences_dir 下拼接
+    fasta_path: Optional[str] = None
+    # FASTA 所在目录（相对 Hydra run 目录或绝对路径）
+    sequences_dir: str = "."
+    # 输出的 PDB 目录名（相对 Hydra run 目录），也可给绝对路径
+    pdb_dir: str = "PDB"
 
 
-sequences={}
-for line in data:
-    if '>' in line:
-        name = line.strip()
-        sequences[name] = str()  #! CHANGE TO corre
-        continue
-    sequences[name] = line.strip()
-
-print(len(sequences))
+@dataclass
+class FoldConfig:
+    iteration_num: int = MISSING
+    label: str = MISSING
+    esm: ESMConfig = ESMConfig()
+    paths: PathsConfig = PathsConfig()
 
 
-count = 0
-error = 0
+# 将 schema 注册给 Hydra
+cs = ConfigStore.instance()
+cs.store(name="fold_schema", node=FoldConfig)
 
-for name, sequence in sequences.items():
-  try:
-    count += 1  
-    with torch.no_grad():
-      output = model_esm.infer_pdb(sequence)
-      torch.cuda.empty_cache()
-      name = name[1:]
-      name = name.split("\t")[0]
-      os.makedirs(f"output_iteration{iteration_num}/PDB", exist_ok=True)
-      with open(f"output_iteration{iteration_num}/PDB/{name}.pdb", "w") as f:
-            f.write(output)
-  except:
-    error += 1
-    
-    print(f'Sequence {name} is processed. {len(sequences)-count} remaining!') 
-    print(f"Number of errors: {error}")
-    torch.cuda.empty_cache()
-del model_esm
 
+# =======================
+# 2) 主逻辑
+# =======================
+def _resolve_device(name: Optional[str]) -> torch.device:
+    if name is None:
+        name = "cuda" if torch.cuda.is_available() else "cpu"
+    return torch.device(name)
+
+
+def _read_fasta_simple(fasta_file: Path) -> dict[str, str]:
+    """
+    简单读取 FASTA（与你原逻辑一致：一行序列）。
+    如果你的 FASTA 可能多行序列，这里可升级为拼接多行。
+    """
+    if not fasta_file.exists():
+        raise FileNotFoundError(f"FASTA not found: {fasta_file}")
+    sequences: dict[str, str] = {}
+    name: Optional[str] = None
+    with fasta_file.open("r") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            if line.startswith(">"):
+                name = line.strip()
+                sequences[name] = ""
+            else:
+                if name is None:
+                    continue
+                sequences[name] = line.strip()
+    return sequences
+
+
+@hydra.main(version_base=None, config_path=None, config_name="fold_schema")
+def main(cfg: FoldConfig):
+    # -------- 目录与输入解析（默认相对 Hydra 的 run 目录 = Path.cwd()）--------
+    # run_dir = Path.cwd()
+    run_dir = Path(cfg.run_dir)
+
+    if cfg.paths.fasta_path:
+        fasta_file = Path(to_absolute_path(cfg.paths.fasta_path)) \
+                     if not os.path.isabs(cfg.paths.fasta_path) else Path(cfg.paths.fasta_path)
+    else:
+        fasta_name = f"seq_gen_{cfg.label}_iteration{cfg.iteration_num}.fasta"
+        fasta_root = Path(cfg.paths.sequences_dir)
+        if not fasta_root.is_absolute():
+            fasta_root = run_dir / fasta_root
+        fasta_file = fasta_root / fasta_name
+
+    pdb_root = Path(cfg.paths.pdb_dir)
+    if not pdb_root.is_absolute():
+        pdb_root = run_dir / pdb_root
+    pdb_root.mkdir(parents=True, exist_ok=True)
+
+    print(f"[Hydra] run_dir  = {run_dir}")
+    print(f"[Hydra] fasta   = {fasta_file}")
+    print(f"[Hydra] pdb_dir = {pdb_root}")
+
+    # -------- 设备 & 模型加载（目录从配置读取）--------
+    device = _resolve_device(cfg.esm.device)
+    model_dir_abs = to_absolute_path(cfg.esm.model_dir) \
+                    if not os.path.isabs(cfg.esm.model_dir) else cfg.esm.model_dir
+
+    print(f"[ESM] loading from: {model_dir_abs}")
+    tokenizer_esm = AutoTokenizer.from_pretrained(model_dir_abs)
+    model_esm = EsmForProteinFolding.from_pretrained(model_dir_abs).to(device)
+    model_esm.eval()
+
+    # -------- 读取 FASTA 并折叠 --------
+    sequences = _read_fasta_simple(fasta_file)
+    print(f"[FASTA] {len(sequences)} sequences loaded")
+
+    count, error = 0, 0
+    for name, sequence in sequences.items():
+        try:
+            count += 1
+            with torch.no_grad():
+                output_pdb = model_esm.infer_pdb(sequence)
+                # 清理 CUDA 缓存以减小显存压力
+                if device.type == "cuda":
+                    torch.cuda.empty_cache()
+
+                # 清洗 FASTA 名（去掉 '>' 与可能的制表符）
+                clean = name[1:] if name.startswith(">") else name
+                clean = clean.split("\t")[0]
+
+                out_path = pdb_root / f"{clean}.pdb"
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                with out_path.open("w") as f:
+                    f.write(output_pdb)
+
+            if count % 10 == 0 or count == len(sequences):
+                print(f"[PROGRESS] processed {count}/{len(sequences)}")
+
+        except Exception as e:
+            error += 1
+            print(f"[ERROR] sequence '{name}' failed: {e!r}")
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
+
+    # 释放模型
+    del model_esm
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
+
+    print(f"[DONE] total={len(sequences)}, ok={count-error}, error={error}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+python ESM_Fold_hydra.py \
+  iteration_num=${i} \
+  label="${label}" \
+  esm.model_dir="/home/.../esm_fold" \
+  paths.sequences_dir="." \
+  paths.pdb_dir="PDB" \
+  hydra.run.dir="${folder_path}output_iteration${i}"
+'''
