@@ -82,7 +82,7 @@ for i in $(seq 0 30); do
 
   foldseek easy-search \
     "${run_dir}/PDB" \
-    "${folder_path}7atl.pdb" \
+    "${folder_path}../../PDB/7atl.pdb" \
     "${run_dir}/alpha_${label}_TM_iteration${i}" \
     "${tmp_dir}" \
     --format-output "query,target,alntmscore,qtmscore,ttmscore,alnlen" \

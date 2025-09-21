@@ -9,8 +9,8 @@ paths:
   output_logs:  "${run_dir}/logs.csv"
   sequences:    "${run_dir}"
   tm_scores:    "${run_dir}"
-  toxicity:     "${run_dir}/outfile${iter}.csv"        # 也可以在 .sh 里覆盖
-  kcat:         "${run_dir}/results_kcat${iter}.csv"   # 同上
+  toxicity:     "${run_dir}/outfile${iteration_num}.csv"        # 也可以在 .sh 里覆盖
+  kcat:         "${run_dir}/results_kcat${iteration_num}.csv"   # 同上
 
 hydra:
   job:

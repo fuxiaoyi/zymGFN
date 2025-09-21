@@ -216,3 +216,8 @@ outputs
 .ipynb_checkpoints
 rsync*
 dataset
+PDB 
+RF_model
+Sequence_1
+seq.aac
+toxinpred2
