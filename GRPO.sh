@@ -70,7 +70,7 @@ for i in $(seq 0 30); do
 
   # -------- 折叠结构（PDB 写到 run_dir/PDB）--------
   echo "[Iter ${i}] Folding (ESMFold)"
-  python "${folder_path}ESM_Fold.py" \
+  python "${folder_path}../utils/ESM_Fold.py" \
     --config-path "${folder_path}conf" --config-name "grpo_fold" \
     iteration_num="${i}" label="${label}" \
     hydra.run.dir="${run_dir}"
@@ -105,7 +105,7 @@ for i in $(seq 0 30); do
   # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/matrics_yxu
   # cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/toxinpred/toxinpred2
 
-  python toxinpred2.py \
+  python "${folder_path}../utils/toxinpred2.py" \
     -i "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
     -o "${run_dir}/outfile${i}.csv" \
     -d 2
@@ -126,13 +126,12 @@ for i in $(seq 0 30); do
 # )
   # LD_PRELOAD="$GOMP" \
   # PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-  # /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python \
-  #   /home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/UniKP/UniKP_fasta_train.py \
-  #   --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
-  #   --smiles "${smiles}" \
-  #   --task kcat \
-  #   --out "${run_dir}/results_kcat${i}.csv" \
-  #   --write_linear
+    python "${folder_path}../utils/uniKP_fasta_train.py" \
+    --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
+    --smiles "${smiles}" \
+    --task kcat \
+    --out "${run_dir}/results_kcat${i}.csv" \
+    --write_linear
 
   # conda deactivate
   echo "UniKP kcat skipped - conda environment not available"
@@ -143,7 +142,7 @@ for i in $(seq 0 30); do
   # module unload compilers/cuda cudnn compilers/gcc
   # source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
 
-  python "${folder_path}dataset_gen_toxUnikp.py" \
+  python "${folder_path}../utils/dataset_gen_toxUnikp.py" \
     --config-path "${folder_path}conf" --config-name "grpo_dataset" \
     hydra.run.dir="${run_dir}"
 
