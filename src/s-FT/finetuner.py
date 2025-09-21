@@ -308,8 +308,8 @@ def main():
 
     model.resize_token_embeddings(len(tokenizer))
 
-    train_dataset = load_from_disk('/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ProtRL/experiments/Self-finetuning/s-FT_TM-score/dataset/train2')
-    eval_dataset = load_from_disk('/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ProtRL/experiments/Self-finetuning/s-FT_TM-score/dataset/eval2')
+    train_dataset = load_from_disk('/root/zymGFN/dataset/train2')
+    eval_dataset = load_from_disk('/root/zymGFN/dataset/eval2')
 
     # Initialize our Trainer
     trainer = Trainer(

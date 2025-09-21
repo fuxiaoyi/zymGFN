@@ -63,7 +63,7 @@ if __name__=='__main__':
     device = torch.device("cuda") # Replace with 'cpu' if you don't have a GPU - but it will be slow
     print('Reading pretrained model and tokenizer')
     if iteration_num == 0: 
-        model_name = "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+        model_name = "/root/zymGFN/zymCTRL/"
         tokenizer = AutoTokenizer.from_pretrained(model_name) # change to ZymCTRL location
         # model = GPT2LMHeadModel.from_pretrained("AI4PD/ZymCTRL").to(device) # change to ZymCTRL location
         model = GPT2LMHeadModel.from_pretrained(model_name, trust_remote_code=True, use_safetensors=False).to(device) # change to ZymCTRL location

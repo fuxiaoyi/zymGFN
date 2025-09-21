@@ -209,3 +209,10 @@ __marimo__/
 # Customized
 /data/
 /model/
+zymCTRL
+esm_fold
+output_iteration0
+outputs
+.ipynb_checkpoints
+rsync*
+dataset

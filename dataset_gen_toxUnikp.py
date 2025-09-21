@@ -246,7 +246,7 @@ if __name__ == "__main__":
 python ${folder_path}dataset_gen_toxUnikp.py \
   iteration_num=${i} \
   label=${label} \
-  model_dir="/root/zymGFN/zymCTRL/" \
+  model_dir="/home/.../ZymCTRL_local" \
   paths.output_logs="logs.csv" \
   paths.sequences="." \
   paths.tm_scores="." \

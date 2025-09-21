@@ -13,8 +13,8 @@ special_tokens: ["<start>", "<end>", "<|endoftext|>", "<pad>", " ", "<sep>"]
 allowed_aas: "ACDEFGHIKLMNPQRSTVWY"
 
 model:
-  base_model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
-  tokenizer_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+  base_model_dir: "/root/zymGFN/zymCTRL/"
+  tokenizer_dir: "/root/zymGFN/zymCTRL/"
   device: null     # null=自动选 cuda/cpu
 
 paths:

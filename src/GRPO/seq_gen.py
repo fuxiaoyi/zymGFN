@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 
@@ -57,12 +57,12 @@ class GenConfig:
     # 仅允许的氨基酸集合（过滤）
     allowed_aas: str = "ACDEFGHIKLMNPQRSTVWY"
 
-    model: ModelConfig = ModelConfig(
+    model: ModelConfig = field(default_factory=lambda: ModelConfig(
         base_model_dir=MISSING,
         tokenizer_dir=None,
         device=None,
-    )
-    paths: PathsConfig = PathsConfig()
+    ))
+    paths: PathsConfig = field(default_factory=PathsConfig)
 
 
 # 将 schema 注册给 Hydra
@@ -225,8 +225,8 @@ if __name__ == "__main__":
 python seq_gen_hydra.py \
   iteration_num=${i} \
   label="${label}" \
-  model.base_model_dir="/home/.../ZymCTRL_local" \
-  model.tokenizer_dir="/home/.../ZymCTRL_local" \
+  model.base_model_dir="/root/zymGFN/zymCTRL/" \
+  model.tokenizer_dir="/root/zymGFN/zymCTRL/" \
   paths.out_dir="." \
   hydra.run.dir="${folder_path}output_iteration${i}"
 

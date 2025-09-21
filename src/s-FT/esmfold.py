@@ -5,8 +5,8 @@ import argparse
 torch.cuda.empty_cache()
 
 ##### Load the module ESM ######
-tokenizer_esm = AutoTokenizer.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold") # Download tokenizer
-model_esm = EsmForProteinFolding.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold")  # Download model
+tokenizer_esm = AutoTokenizer.from_pretrained("/root/zymGFN/esm_fold") # Download tokenizer
+model_esm = EsmForProteinFolding.from_pretrained("/root/zymGFN/esm_fold")  # Download model
 device_name = "cuda" if torch.cuda.is_available() else "cpu"
 device = torch.device(device_name)
 model_esm = model_esm.to(device)

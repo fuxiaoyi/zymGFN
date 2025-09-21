@@ -3,7 +3,7 @@ iteration_num:  ${oc.env:ITER,0}
 label: ${oc.env:LABEL,3.1.1.1}
 run_dir: ${oc.env:RUN_DIR}
 
-model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+model_dir: "/root/zymGFN/zymCTRL/"
 
 paths:
   output_logs:  "${run_dir}/logs.csv"

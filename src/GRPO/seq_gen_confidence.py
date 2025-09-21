@@ -101,13 +101,13 @@ def main():
     print("Reading pretrained model and tokenizer")
 
     if iteration_num == 0:
-        model_name = "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+        model_name = "/root/zymGFN/zymCTRL/"
     else:
         model_name = f"./output_iteration{iteration_num}"
 
     print(f"{model_name} loaded")
     tokenizer = AutoTokenizer.from_pretrained(
-        "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+        "/root/zymGFN/zymCTRL/"
     )
     model = GPT2LMHeadModel.from_pretrained(model_name).to(device).eval()
 

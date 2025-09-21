@@ -25,7 +25,7 @@ dependencies:
   - hydra-core
   - omegaconf
   - pip:
-    - esmfold
+    # esmfold is part of transformers library - no separate package needed
     - fair-esm
     - accelerate
     - wandb

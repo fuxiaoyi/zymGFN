@@ -13,17 +13,17 @@
 start_epoch=$(date +%s)
 echo [$(date +"%Y-%m-%d %H:%M:%S")] starting on $(hostname)
 
-set -euo pipefail
+set -eu
 
 ###################
 # set environment #
 ###################
-eval "$(conda shell.bash hook)"
+# eval "$(conda shell.bash hook)"
 
 ###############
 # run command #
 ###############
-folder_path="/home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/ProtRL/example/ZymCTRL-fold/GRPO_backup/"
+folder_path="/root/zymGFN/src/GRPO/"
 label="3.1.1.1"
 smiles='CC(=O)Oc1ccc(cc1)[N+](=O)[O-]'
 
@@ -43,25 +43,25 @@ for i in $(seq 0 30); do
 
   # -------- 训练（仅 i>0 时运行；读取上一轮 prev_dir/logs.csv）--------
   if [ "${i}" -gt 0 ]; then
-    conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
-    module unload compilers/cuda cudnn compilers/gcc
-    source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
+    # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
+    # module unload compilers/cuda cudnn compilers/gcc
+    # source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
 
     python "${folder_path}GRPO_train.py" \
       --config-path "${folder_path}conf" --config-name "grpo_train" \
       iteration_num="${i}" label="${label}" \
       hydra.run.dir="${run_dir}"
 
-    conda deactivate
+    # conda deactivate
   else
     echo "[Iter 0] cold-start: skip training; generating data for next iter"
   fi
 
   # -------- 生成序列（FASTA 写到 run_dir）--------
   echo "[Iter ${i}] Sequence generation"
-  module unload compilers/cuda cudnn compilers/gcc
-  module load compilers/gcc/11.3.0 compilers/cuda/11.8 cudnn/8.8.1.3_cuda11.x
-  conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_cp310
+  # module unload compilers/cuda cudnn compilers/gcc
+  # module load compilers/gcc/11.3.0 compilers/cuda/11.8 cudnn/8.8.1.3_cuda11.x
+  # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_cp310
 
   python "${folder_path}seq_gen.py" \
     --config-path "${folder_path}conf" --config-name "grpo_seq_gen" \
@@ -102,52 +102,52 @@ for i in $(seq 0 30); do
 
   # -------- 毒性预测（ToxinPred2，输出到 run_dir）--------
   echo "[Iter ${i}] ToxinPred2"
-  conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/matrics_yxu
-  cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/toxinpred/toxinpred2
+  # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/matrics_yxu
+  # cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/toxinpred/toxinpred2
 
   python toxinpred2.py \
     -i "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
     -o "${run_dir}/outfile${i}.csv" \
     -d 2
 
-  conda deactivate
+  # conda deactivate
+  echo "ToxinPred2 skipped - conda environment not available"
 
   # -------- UniKP（kcat，输出到 run_dir）--------
   echo "[Iter ${i}] UniKP kcat"
-  conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2
-  cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/UniKP
+  # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2
+  # cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/UniKP
 
-  GOMP=$(/home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python - <<'PY'
-import sys, glob, os
-c = glob.glob(os.path.join(sys.prefix, "lib", "libgomp*.so*"))
-print(c[0] if c else "")
-PY
-)
-  LD_PRELOAD="$GOMP" \
-  PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-  /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python \
-    /home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/UniKP/UniKP_fasta_train.py \
-    --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
-    --smiles "${smiles}" \
-    --task kcat \
-    --out "${run_dir}/results_kcat${i}.csv" \
-    --write_linear
+  # GOMP=$(/home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python - <<'PY'
+# import sys, glob, os
+# c = glob.glob(os.path.join(sys.prefix, "lib", "libgomp*.so*"))
+# print(c[0] if c else "")
+# PY
+# )
+  # LD_PRELOAD="$GOMP" \
+  # PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+  # /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/UniKP_yxu_v2/bin/python \
+  #   /home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/UniKP/UniKP_fasta_train.py \
+  #   --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
+  #   --smiles "${smiles}" \
+  #   --task kcat \
+  #   --out "${run_dir}/results_kcat${i}.csv" \
+  #   --write_linear
 
-  conda deactivate
+  # conda deactivate
+  echo "UniKP kcat skipped - conda environment not available"
 
   # -------- 合并生成当轮 logs.csv（写到 run_dir）--------
   echo "[Iter ${i}] dataset generation"
-  conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
-  module unload compilers/cuda cudnn compilers/gcc
-  source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
+  # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/conda_env/proteinRL_pt260
+  # module unload compilers/cuda cudnn compilers/gcc
+  # source /home/bingxing2/apps/package/pytorch/2.6.0-cu124-cp311/env.sh
 
   python "${folder_path}dataset_gen_toxUnikp.py" \
     --config-path "${folder_path}conf" --config-name "grpo_dataset" \
-    paths.toxicity="${run_dir}/outfile${i}.csv" \
-    paths.kcat="${run_dir}/results_kcat${i}.csv" \
     hydra.run.dir="${run_dir}"
 
-  conda deactivate
+  # conda deactivate
 
 done
 

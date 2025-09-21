@@ -1,16 +1,21 @@
 # 供 ESM_Fold_hydra.py 使用
 # === 统一从环境变量拿关键标量 ===
-iter:  ${oc.env:ITER,0}
+iteration_num:  ${oc.env:ITER,0}
 label: ${oc.env:LABEL,3.1.1.1}
-run_dir: ${oc.env:RUN_DIR}          # 强烈推荐在 .sh 里每轮都 export 这个
+run_dir: ${oc.env:RUN_DIR}
 
 esm:
-  model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/esm_fold"
+  model_dir: "/root/zymGFN/esm_fold"
   device: null
+  # 内存优化设置
+  max_sequence_length: 500  # 最大序列长度，超过则跳过
+  batch_size: 1  # 批处理大小
+  use_mixed_precision: true  # 使用混合精度
+  clear_cache_frequency: 5  # 每处理多少个序列清理一次缓存
 
 paths:
   # 全部用绝对路径（或由 run_dir 拼出的“准绝对路径”）
-  fasta_path:   "${run_dir}/seq_gen_${label}_iteration${iter}.fasta"
+  fasta_path:   "${run_dir}/seq_gen_${label}_iteration${iteration_num}.fasta"
   sequences_dir: "${run_dir}"
   pdb_dir:       "${run_dir}/PDB"
 

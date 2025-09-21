@@ -4,7 +4,7 @@ label: ${oc.env:LABEL,3.1.1.1}      # 从环境变量 LABEL 取值，默认 3.1.
 run_dir: ${oc.env:RUN_DIR}
 prev_dir: ${oc.env:PREV_DIR}
 
-model_dir: "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local"
+model_dir: "/root/zymGFN/zymCTRL/"
 max_iteration_num: 30
 
 hp:

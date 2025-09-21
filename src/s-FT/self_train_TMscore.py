@@ -132,7 +132,7 @@ if __name__ == '__main__':
     del df
 
     # load pretrained ZymCTRL-zfns tokenizer to produce training and evaluation datasets 
-    tokenizer = AutoTokenizer.from_pretrained("/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local")
+    tokenizer = AutoTokenizer.from_pretrained("/root/zymGFN/zymCTRL/")
 
     #the objective is to get here strings, that when tokenized, would span a length of 1024, for each sequence group its length and untokenized string
     processed_dataset = []
@@ -217,7 +217,7 @@ if __name__ == '__main__':
     print('starting finetune')
     # subprocess.run(["python", "/users/nferruz/martigues/self_training/finetuner.py", "--tokenizer_name", model_savedir+f'model_{n_iteration-1}/'+checkpoint, "--do_train", "--do_eval", "--load_best_model_at_end", "--output_dir", f"{model_savedir}/model_{n_iteration}", "--evaluation_strategy", "steps", "--eval_steps", "10", "--logging_steps", "5", "--save_steps", "500", "--num_train_epochs", "28", "--per_device_train_batch_size", "4", "--per_device_eval_batch_size", "1", "--cache_dir", ".", "--save_total_limit", "1", "--learning_rate", "0.8e-04", "--dataloader_drop_last", "True", "--model_name_or_path", model_savedir+f'model_{n_iteration-1}/'+checkpoint])
     if iteration_num == 1: 
-        subprocess.run(["python", f"{cwd}finetuner.py", "--tokenizer_name", "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local", "--model_name_or_path", "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local", "--load_best_model_at_end", "--do_train", "--do_eval", "--output_dir", f"{cwd}/models/{label}_model{iteration_num}", "--evaluation_strategy", "steps", "--eval_steps", "10", "--logging_steps", "2", "--save_steps", "10", "--num_train_epochs", "25", "--per_device_train_batch_size", "1", "--per_device_eval_batch_size", "1", "--cache_dir", ".", "--learning_rate", "0.8e-06", "--dataloader_drop_last", "True", "--save_total_limit", "1"])
+        subprocess.run(["python", f"{cwd}finetuner.py", "--tokenizer_name", "/root/zymGFN/zymCTRL/", "--model_name_or_path", "/root/zymGFN/zymCTRL/", "--load_best_model_at_end", "--do_train", "--do_eval", "--output_dir", f"{cwd}/models/{label}_model{iteration_num}", "--evaluation_strategy", "steps", "--eval_steps", "10", "--logging_steps", "2", "--save_steps", "10", "--num_train_epochs", "25", "--per_device_train_batch_size", "1", "--per_device_eval_batch_size", "1", "--cache_dir", ".", "--learning_rate", "0.8e-06", "--dataloader_drop_last", "True", "--save_total_limit", "1"])
     else: 
         checkpoint_folder = [x for x in os.listdir(f'{cwd}models/{label}_model{iteration_num-1}') if 'checkpoint' in x][0] ## changed 8/10/2024
         subprocess.run(["python", f"{cwd}scripts/finetuner.py", "--tokenizer_name", f"{cwd}models/{label}_model{iteration_num-1}/{checkpoint_folder}", "--model_name_or_path", f"{cwd}models/{label}_model{iteration_num-1}/{checkpoint_folder}", "--load_best_model_at_end", "--do_train", "--do_eval", "--output_dir", f"{cwd}models/{label}_model{iteration_num}", "--evaluation_strategy", "steps", "--eval_steps", "10", "--logging_steps", "2", "--save_steps", "10", "--num_train_epochs", "25", "--per_device_train_batch_size", "4", "--per_device_eval_batch_size", "1", "--cache_dir", ".", "--learning_rate", "0.8e-06", "--dataloader_drop_last", "True", "--save_total_limit", "1"])

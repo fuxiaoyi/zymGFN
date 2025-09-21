@@ -280,7 +280,7 @@ if __name__ == '__main__':
     del df
 
     # tokenizer（按你的本地路径）
-    tokenizer = AutoTokenizer.from_pretrained('/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local')
+    tokenizer = AutoTokenizer.from_pretrained('/root/zymGFN/zymCTRL/')
 
     # 打包到 1024 tokens
     processed_dataset = []
@@ -354,8 +354,8 @@ if __name__ == '__main__':
     if iteration_num == 1:
         subprocess.run([
             "python", f"{cwd}finetuner.py",
-            "--tokenizer_name", "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local",
-            "--model_name_or_path", "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local",
+            "--tokenizer_name", "/root/zymGFN/zymCTRL/",
+            "--model_name_or_path", "/root/zymGFN/zymCTRL/",
             "--load_best_model_at_end",
             "--do_train", "--do_eval",
             "--output_dir", f"{cwd}models/{label}_model{iteration_num}",

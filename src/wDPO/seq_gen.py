@@ -60,7 +60,7 @@ if __name__=='__main__':
     parser.add_argument("--iteration_num", type=int)
     parser.add_argument("--label", type=str)
     parser.add_argument("--cwd", type=str)
-    parser.add_argument("--model_default", default="/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local", type=str)
+    parser.add_argument("--model_default", default="/root/zymGFN/zymCTRL/", type=str)
     args = parser.parse_args()
     iteration_num = args.iteration_num
     ec_label = args.label

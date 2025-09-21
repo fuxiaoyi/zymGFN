@@ -48,7 +48,7 @@ for i in $(seq 1 30); do
     python "${folder_path}train.py" \
       --iteration_num "${i}" \
       --label "${label}" \
-      --model_dir "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local" \
+      --model_dir "/root/zymGFN/zymCTRL/" \
       --max_iteration_num 30 \
       --mode $DPO_mode
 
@@ -147,7 +147,7 @@ PY
 
   echo dataset generation 
   cd ${folder_path}
-  python ${folder_path}dataset_gen_toxUnikp.py --iteration_num $i --label $label --model_dir "/home/bingxing2/ailab/group/ai4earth/hantao/project/internTA/proteinGflownet/ZymCTRL_local" --tox_csv "${folder_path}outfile${i}.csv" --kcat_csv "${folder_path}results_kcat${i}.csv"
+  python ${folder_path}dataset_gen_toxUnikp.py --iteration_num $i --label $label --model_dir "/root/zymGFN/zymCTRL/" --tox_csv "${folder_path}outfile${i}.csv" --kcat_csv "${folder_path}results_kcat${i}.csv"
 
   
 done

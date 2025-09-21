@@ -307,7 +307,7 @@ def main(cfg: TrainConfig):
     从 CLI 或 YAML 传入：
       iteration_num: 0  # 注意：从 0 开始
       label: "3.1.1.1"
-      model_dir: "/abs/path/to/ZymCTRL_local"
+      model_dir: "/root/zymGFN/zymCTRL/"
       max_iteration_num: 30
       hp: {... 超参 ...}
       paths:
@@ -430,7 +430,7 @@ if __name__ == "__main__":
 python train_hydra.py \
   iteration_num=7 \
   label=3.1.1.1 \
-  model_dir=/home/.../ZymCTRL_local \
+  model_dir=/root/zymGFN/zymCTRL/ \
   max_iteration_num=30 \
   hp.learning_rate=3e-6 hp.num_epochs=2 \
   paths.tox_csv=/abs/path/outfile7.csv \
