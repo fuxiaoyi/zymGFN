@@ -15,6 +15,7 @@ biopython
 biotite
 openmm
 mdtraj
+rdkit
 
 # Data science
 numpy<2.0
