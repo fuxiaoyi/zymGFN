@@ -8,9 +8,9 @@ wget https://hf-mirror.com/facebook/esmfold_v1/resolve/main/vocab.txt
 mkdir -p /hy-tmp/zymCTRL
 ln -s /hy-tmp/zymCTRL .
 cd ../zymCTRL
-wget https://hr-mirror.com/AI4PD/ZymCTRL/resolve/main/config.json
-wget https://hr-mirror.com/AI4PD/ZymCTRL/resolve/main/tokenizer_config.json
-wget https://hr-mirror.com/AI4PD/ZymCTRL/resolve/main/vocab.txt
+https://huggingface.co/AI4PD/ZymCTRL/resolve/main/vocab.json
+https://huggingface.co/AI4PD/ZymCTRL/resolve/main/tokenizer.json
+https://huggingface.co/AI4PD/ZymCTRL/resolve/main/config.json
 mkdir -p /hy-tmp/prot_t5_xl_uniref50
 cd ../unikp
 ln -s /hy-tmp/prot_t5_xl_uniref50 .
