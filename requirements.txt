@@ -8,6 +8,7 @@ torchvision
 torchaudio
 transformers>=4.30.0
 accelerate>=0.20.0
+SentencePiece
 
 # Protein folding and analysis
 fair-esm
@@ -15,7 +16,6 @@ biopython
 biotite
 openmm
 mdtraj
-rdkit
 
 # Data science
 numpy<2.0
