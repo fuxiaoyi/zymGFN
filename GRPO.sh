@@ -105,7 +105,7 @@ for i in $(seq 0 30); do
   # conda activate /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/envs/matrics_yxu
   # cd /home/bingxing2/ailab/scxlab0094/hantao/project/internTA/proteinGflownet/toxinpred/toxinpred2
 
-  python "${folder_path}../utils/toxinpred2.py" \
+  toxinpred2 \
     -i "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
     -o "${run_dir}/outfile${i}.csv" \
     -d 2
@@ -126,9 +126,10 @@ for i in $(seq 0 30); do
 # )
   # LD_PRELOAD="$GOMP" \
   # PYTHONNOUSERSITE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-    python "${folder_path}../utils/uniKP_fasta_train.py" \
+    python "${folder_path}../../unikp/uniKP_fasta_train.py" \
     --fasta "${run_dir}/seq_gen_${label}_iteration${i}.fasta" \
     --smiles "${smiles}" \
+    --prot_t5_path "${folder_path}../../unikp/prot_t5_xl_uniref50" \
     --task kcat \
     --out "${run_dir}/results_kcat${i}.csv" \
     --write_linear

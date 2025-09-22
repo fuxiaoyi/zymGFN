@@ -211,7 +211,7 @@ __marimo__/
 /model/
 zymCTRL
 esm_fold
-output_iteration0
+output_iteration*
 outputs
 .ipynb_checkpoints
 rsync*
@@ -221,3 +221,6 @@ RF_model
 Sequence_1
 seq.aac
 toxinpred2
+prot_t5_xl_uniref50
+UniKP_for_*.pkl
+wandb
