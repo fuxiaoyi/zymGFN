@@ -81,6 +81,50 @@ class pLM_GRPOTrainer(GRPOTrainer):
             
         return RandomSampler(self.eval_dataset)
 
+    def _get_per_token_logps(
+        self, 
+        model: Union[PreTrainedModel, str], 
+        input_ids: torch.Tensor, 
+        attention_mask: torch.Tensor, 
+        logits_to_keep: int,
+        batch_size: int
+    ) -> torch.Tensor:
+        """
+        Compute per-token log probabilities for the given model and input.
+        
+        Args:
+            model: The model to compute log probabilities for
+            input_ids: Input token IDs [batch_size, seq_len]
+            attention_mask: Attention mask [batch_size, seq_len]
+            logits_to_keep: Number of tokens to keep from the end (completion tokens)
+            batch_size: Batch size for processing
+            
+        Returns:
+            Per-token log probabilities [batch_size, logits_to_keep]
+        """
+        with torch.no_grad():
+            # Get model outputs
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask)
+            logits = outputs.logits
+            
+            # Only keep the last logits_to_keep tokens (completion tokens)
+            logits = logits[:, -logits_to_keep:, :]  # [batch_size, logits_to_keep, vocab_size]
+            
+            # Get the corresponding input tokens for the completion part
+            completion_tokens = input_ids[:, -logits_to_keep:]  # [batch_size, logits_to_keep]
+            
+            # Compute log probabilities
+            log_probs = torch.nn.functional.log_softmax(logits, dim=-1)  # [batch_size, logits_to_keep, vocab_size]
+            
+            # Gather log probabilities for the actual tokens
+            per_token_logps = torch.gather(
+                log_probs, 
+                dim=-1, 
+                index=completion_tokens.unsqueeze(-1)
+            ).squeeze(-1)  # [batch_size, logits_to_keep]
+            
+            return per_token_logps
+
     def _generate_and_score_completions(
         self, inputs: list[dict[str, Union[torch.Tensor, Any]]]
         ) -> dict[str, Union[torch.Tensor, Any]]:

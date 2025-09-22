@@ -16,6 +16,9 @@ from utils import split  # SMILES 分词
 # === ProtT5（来自 ProtTrans / HF Transformers）===
 from transformers import T5EncoderModel, T5Tokenizer
 
+# === 兼容性修复 ===
+from pickle_compatibility import safe_model_load
+
 
 # --------------------------
 # 工具：读 FASTA（无第三方依赖）
@@ -208,7 +211,7 @@ def main():
     )  # [N, D1]
 
     # 嵌入：SMILES
-    sm_embedder = SmilesEmbedder(vocab_path="vocab.pkl", trfm_path="trfm_12_23000.pkl")
+    sm_embedder = SmilesEmbedder(vocab_path="unikp/vocab.pkl", trfm_path="unikp/trfm_12_23000.pkl")
     smiles_vec = sm_embedder.embed(smiles_list)  # [N, D2]
 
     if seq_vec.shape[0] != smiles_vec.shape[0]:
@@ -222,13 +225,15 @@ def main():
     else:
         # 按任务选择默认 pickle 文件名
         default_map = {
-            "kcat": "UniKP/UniKP for kcat.pkl",
-            "Km": "UniKP/UniKP for Km.pkl",
-            "kcat_Km": "UniKP/UniKP for kcat_Km.pkl",
+            "kcat": "unikp/UniKP_for_kcat.pkl",
+            "Km": "unikp/UniKP_for_Km.pkl",
+            "kcat_Km": "unikp/UniKP_for_kcat_Km.pkl",
         }
         model_path = default_map[args.task]
-    with open(model_path, "rb") as f:
-        model = pickle.load(f)
+    
+    # 使用兼容性加载器
+    print(f"Loading model from: {model_path}")
+    model = safe_model_load(model_path)
 
     # 预测
     y_log10 = model.predict(fused)  # UniKP 输出为 log10

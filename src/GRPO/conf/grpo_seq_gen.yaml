@@ -7,8 +7,8 @@ run_dir: ${oc.env:RUN_DIR}
 top_k: 9
 repetition_penalty: 1.2
 max_length: 1014
-num_return_sequences: 20
-num_batches: 10
+num_return_sequences: 2
+num_batches: 1
 special_tokens: ["<start>", "<end>", "<|endoftext|>", "<pad>", " ", "<sep>"]
 allowed_aas: "ACDEFGHIKLMNPQRSTVWY"
 
