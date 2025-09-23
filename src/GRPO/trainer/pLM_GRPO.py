@@ -65,6 +65,9 @@ class pLM_GRPOTrainer(GRPOTrainer):
         self.ref_model.eval()
         for p in self.ref_model.parameters():
             p.requires_grad_(False)
+            
+        # Initialize textual logs for tracking prompts and completions
+        self._textual_logs = {"prompt": [], "completion": []}
 
     
     def _get_train_sampler(self, dataset: Optional[Dataset] = None) -> Sampler:
@@ -235,5 +238,6 @@ class pLM_GRPOTrainer(GRPOTrainer):
             "advantages": advantages,
             "old_per_token_logps": old_per_token_logps,
             "ref_per_token_logps": ref_per_token_logps,
+            "num_items_in_batch": torch.tensor(len(prompts), device=device),
         }
     
