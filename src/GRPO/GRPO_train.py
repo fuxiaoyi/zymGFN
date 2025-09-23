@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from trainer.utils import *
-from trainer.pLM_weightedDPO import weighted_DPO
 from trainer.pLM_GRPO import pLM_GRPOTrainer
 
 import hydra

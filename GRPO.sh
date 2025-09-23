@@ -52,7 +52,18 @@ for i in $(seq 0 30); do
       iteration_num="${i}" label="${label}" \
       hydra.run.dir="${run_dir}"
 
-    # conda deactivate
+    # if model.safetensors exists, move it to /hy-tmp/GRPO and name it as model.safetensors-latest
+    if [ -f "${prev_dir}/model.safetensors" ]; then
+      mv "${prev_dir}/model.safetensors" "/hy-tmp/GRPO/model.safetensors"
+    fi
+
+    # if checkpoint-* exists, rename it to checkpoint-latest and move it to /hy-tmp/GRPO 
+    if [ -d "${prev_dir}/checkpoint-"* ]; then
+      mv -f "${prev_dir}/checkpoint-"* "${prev_dir}/checkpoint-latest"
+      rm -rf "/hy-tmp/GRPO/checkpoint-latest" 2>/dev/null
+      mv -f "${prev_dir}/checkpoint-latest" "/hy-tmp/GRPO/checkpoint-latest"
+    fi
+
   else
     echo "[Iter 0] cold-start: skip training; generating data for next iter"
   fi
@@ -147,8 +158,11 @@ for i in $(seq 0 30); do
     --config-path "${folder_path}conf" --config-name "grpo_dataset" \
     hydra.run.dir="${run_dir}"
 
-  # conda deactivate
-
+  # if /hy-tmp/GRPO does not exist, create it
+  if [ ! -d "/hy-tmp/GRPO" ]; then
+    mkdir -p "/hy-tmp/GRPO"
+  fi
+ 
 done
 
 ###############

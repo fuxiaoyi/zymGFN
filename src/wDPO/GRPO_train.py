@@ -1,6 +1,5 @@
 from src.utils import *
 from src.pLM_weigtedDPO import weighted_DPO
-from src.pLM_GRPO import pLM_GRPOTrainer
 
 from datasets import load_dataset, Dataset
 from trl import GRPOConfig, GRPOTrainer
